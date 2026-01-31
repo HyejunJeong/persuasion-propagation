@@ -417,12 +417,19 @@ Defined personality prompts for different LLM styles:
 ## Key Features
 
 ✅ **Unified Codebase**: Single notebook per experiment type
+
 ✅ **Mode Switching**: Easy toggle between on-the-fly and prefill modes
+
 ✅ **Persistent Agent**: Same agent throughout all 7 steps
+
 ✅ **Comprehensive Metrics**: 8+ behavioral metrics per task type
+
 ✅ **Statistical Rigor**: Mann-Whitney U tests, effect sizes, persona analysis
+
 ✅ **Publication-Ready Viz**: Clean plots and heatmaps
+
 ✅ **Reproducible**: Seeds, logging, trace files
+
 ✅ **Modular Design**: Reusable utilities in `utils.py` and `vis.py`
 
 ## Citation
@@ -431,10 +438,10 @@ If you use this code in your research, please cite:
 
 ```bibtex
 @article{jeong2025persuasion,
-  title={Persuasion Persistence and Behavioral Misalignment in Large Language Models},
-  author={Jeong, Hyejun and others},
+  title={Persuasion Propagation in LLM Agents},
+  author={Jeong, Hyejun, Houmansadr, Amir, Zilberstein, Shlomo, and Bagdasarian, Eugene},
   journal={TBD},
-  year={2025}
+  year={2026}
 }
 ```
 
