@@ -60,9 +60,7 @@ Contains plotting and statistical analysis functions:
 - `filter_baseline()`: Remove baseline conditions
 
 **Metrics**:
-- `compute_friction_score()`: Calculate friction score as mean percentile rank
 - `compute_normalized_metrics()`: Baseline-normalized metrics
-- `percentile_rank_nan_safe()`: NaN-safe percentile ranking
 
 **Statistical Tests**:
 - `pooled_np_p_test()`: Mann-Whitney U test (not-persuaded vs persuaded)
@@ -106,8 +104,8 @@ Contains plotting and statistical analysis functions:
 - **Depth**: Skim quickly vs. careful extraction
 
 **Modes**:
-- `opinion_persuasion`: 7-step pipeline with preference tracking
-- `prefill_only`: Direct prefill with execution preference (P/NP/C0)
+- `onthefly`: 7-step pipeline with preference tracking
+- `prefill`: Direct prefill with execution preference (P/NP/C0)
 
 ### 3. Persuasion-Misaligned Coding (`persuasion-misaligned-coding-unified.ipynb`)
 
@@ -116,18 +114,21 @@ Contains plotting and statistical analysis functions:
 **Hypothesis**: Opinion persuasion → behavioral changes in coding
 
 **Behavioral Metrics**:
-- `num_errors`: Code execution errors
-- `num_code_revisions`: Number of revisions made
-- `coding_duration_s`: Time spent coding
-- `revision_entropy`: Diversity of revision types
-- `strategy_switch_rate`: Strategy changes during solving
-- `overcommitment`: Persisting with failing approaches
-- `mean_revision_size`: Average revision magnitude
-- `final_revision_delta`: Size of final fix
+- **TRS (Task Revision Score)**: Primary metric for coding task behavior
+- **EVS (Exploration Variability Score)**: Measures variation in coding strategies
+- Additional metrics:
+  - `num_errors`: Code execution errors
+  - `num_code_revisions`: Number of revisions made
+  - `coding_duration_s`: Time spent coding
+  - `revision_entropy`: Diversity of revision types
+  - `strategy_switch_rate`: Strategy changes during solving
+  - `overcommitment`: Persisting with failing approaches
+  - `mean_revision_size`: Average revision magnitude
+  - `final_revision_delta`: Size of final fix
 
 **Modes**:
-- `opinion_persuasion`: 7-step pipeline with opinion tracking
-- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+- `onthefly`: 7-step pipeline with opinion tracking
+- `prefill`: Direct prefill with belief state (P/NP/C0)
 
 ### 4. Persuasion-Misaligned Web (`persuasion-misaligned-web-unified.ipynb`)
 
@@ -146,21 +147,20 @@ Contains plotting and statistical analysis functions:
 - `total_duration_s`: Total task duration
 
 **Modes**:
-- `opinion_persuasion`: 7-step pipeline with opinion tracking
+- `onthefly`: 7-step pipeline with opinion tracking
   - **Conditions**: `baseline`, `neutral_injection`, persuasion tactics
-- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+- `prefill`: Direct prefill with belief state (P/NP/C0)
 
 ### 5. Visualization (`visualization-unified.ipynb`)
 
 Comprehensive analysis and visualization toolkit:
-- Friction score calculation (percentile-based aggregation)
 - Statistical tests (Mann-Whitney U, effect sizes)
-- Core plots (friction, behavioral heatmaps, comparisons)
+- Core plots (behavioral heatmaps, comparisons)
 - Support for all experiment types and modes
 
 ## Experiment Modes
 
-### Opinion-Persuasion Mode (7-Step Pipeline)
+### On-the-Fly Mode (7-Step Pipeline)
 
 ```
 1. Prior Opinion    → Measure initial stance (A or B)
@@ -177,7 +177,7 @@ Comprehensive analysis and visualization toolkit:
 - `persisted`: 1 if persuaded opinion maintained after distractors
 - Behavioral metrics: task-specific (coding or web)
 
-### Prefill-Only Mode
+### Prefill Mode
 
 ```
 1. Prefill Reminder → Prime with belief/preference state
@@ -255,7 +255,9 @@ os.environ["OPENAI_API_KEY"] = "your-key"
 
 2. **Set experiment mode** in the configuration cell:
    ```python
-   EXPERIMENT_MODE = "opinion_persuasion"  # or "prefill_only"
+   EXPERIMENT_MODE = "onthefly"  # On-the-Fly mode
+   # or
+   EXPERIMENT_MODE = "prefill"   # Prefill mode
    ```
 
 3. **Configure models**:
@@ -320,25 +322,22 @@ df = await run_batch(
 
 import pandas as pd
 from vis import (
-    compute_friction_score, filter_baseline,
-    pooled_np_p_test, plot_friction_by_persuasion,
+    filter_baseline,
+    pooled_np_p_test,
     CODING_RAW_METRICS, WEB_RAW_METRICS
 )
 
 # Load data
 df = pd.read_json("results/coding_results.jsonl", lines=True)
 
-# Compute friction score
-df = compute_friction_score(df, CODING_RAW_METRICS)
-
 # Filter to treatment conditions
 df_nobase = filter_baseline(df)
 
-# Statistical test
-print(pooled_np_p_test(df_nobase))
+# Statistical test for TRS (Task Revision Score)
+print(pooled_np_p_test(df_nobase, score_col="trs"))
 
-# Visualizations
-plot_friction_by_persuasion(df_nobase, title="Coding: Friction by Persuasion Status")
+# Statistical test for EVS (Exploration Variability Score)
+print(pooled_np_p_test(df_nobase, score_col="evs"))
 ```
 
 ## Data & Results
@@ -363,16 +362,16 @@ Each trial produces a row with:
 - `trial_id`: Unique trial identifier
 - `persona`: Model persona/backbone
 - `tactic`: Persuasion tactic used
-- `experiment_mode`: "opinion_persuasion" or "prefill_only"
+- `experiment_mode`: `"onthefly"` (On-the-Fly mode) or `"prefill"` (Prefill mode)
 
-#### Opinion Measurements (opinion_persuasion mode)
+#### Opinion Measurements (On-the-Fly mode)
 - `prior_choice`: Initial opinion (A/B)
 - `post_choice`: Opinion after persuasion
 - `final_choice`: Opinion after distractors
 - `persuaded`: 1 if post ≠ prior, 0 otherwise
 - `persisted`: 1 if persuaded and final == post
 
-#### Prefill (prefill_only mode)
+#### Prefill (Prefill mode)
 - `prefill_condition`: P, NP, or C0
 - `prefill_reminder`: Exact prefill text used
 
@@ -418,7 +417,7 @@ Defined personality prompts for different LLM styles:
 ## Key Features
 
 ✅ **Unified Codebase**: Single notebook per experiment type
-✅ **Mode Switching**: Easy toggle between opinion-persuasion and prefill-only
+✅ **Mode Switching**: Easy toggle between on-the-fly and prefill modes
 ✅ **Persistent Agent**: Same agent throughout all 7 steps
 ✅ **Comprehensive Metrics**: 8+ behavioral metrics per task type
 ✅ **Statistical Rigor**: Mann-Whitney U tests, effect sizes, persona analysis

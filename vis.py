@@ -117,57 +117,6 @@ def validate_required_columns(df: pd.DataFrame, required: List[str]):
 # ======================================
 # METRIC CALCULATION
 # ======================================
-def percentile_rank_nan_safe(x):
-    """Calculate percentile ranks with NaN handling."""
-    x = pd.Series(x)
-    out = pd.Series(np.nan, index=x.index, dtype=float)
-    mask = x.notna()
-    out.loc[mask] = x.loc[mask].rank(pct=True)
-    return out.values
-
-
-def compute_friction_score(
-    df: pd.DataFrame,
-    raw_metrics: List[str],
-    baseline_label: str = "baseline",
-    eps: float = EPS,
-) -> pd.DataFrame:
-    """Compute friction score as mean percentile rank across metrics.
-
-    Steps:
-    1. For each metric, compute percentile rank within each persona
-    2. Average percentile ranks across all metrics
-    3. Result is friction_score in [0, 1]
-
-    Args:
-        df: Input dataframe
-        raw_metrics: List of raw metric column names
-        baseline_label: Name of baseline condition
-        eps: Small epsilon for numerical stability
-
-    Returns:
-        Dataframe with added friction_score column
-    """
-    df = df.copy()
-
-    for metric in raw_metrics:
-        if metric not in df.columns:
-            print(f"⚠️  Warning: {metric} not found in dataframe")
-            continue
-
-        rank_col = f"{metric}_rank"
-        df[rank_col] = df.groupby("persona")[metric].transform(percentile_rank_nan_safe)
-
-    rank_cols = [f"{m}_rank" for m in raw_metrics if f"{m}_rank" in df.columns]
-    df["friction_score"] = df[rank_cols].mean(axis=1, skipna=True)
-
-    print(f"✅ Friction score computed (n={len(df)})")
-    print(f"   Mean: {df['friction_score'].mean():.3f}")
-    print(f"   Std: {df['friction_score'].std():.3f}")
-
-    return df
-
-
 def compute_normalized_metrics(
     df: pd.DataFrame,
     raw_metrics: List[str],
@@ -212,7 +161,7 @@ def compute_normalized_metrics(
 # ======================================
 # STATISTICAL TESTS
 # ======================================
-def pooled_np_p_test(df: pd.DataFrame, score_col: str = "friction_score") -> Dict:
+def pooled_np_p_test(df: pd.DataFrame, score_col: str) -> Dict:
     """Compare not-persuaded vs persuaded groups using Mann-Whitney U test.
 
     Args:
@@ -249,7 +198,7 @@ def pooled_np_p_test(df: pd.DataFrame, score_col: str = "friction_score") -> Dic
     }
 
 
-def persona_delta_summary(df: pd.DataFrame, score_col: str = "friction_score") -> pd.DataFrame:
+def persona_delta_summary(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
     """Compute per-persona differences between persuaded and not-persuaded.
 
     Args:
@@ -284,7 +233,7 @@ def persona_delta_summary(df: pd.DataFrame, score_col: str = "friction_score") -
     return pd.DataFrame(rows)
 
 
-def tactic_summary(df: pd.DataFrame, score_col: str = "friction_score") -> pd.DataFrame:
+def tactic_summary(df: pd.DataFrame, score_col: str) -> pd.DataFrame:
     """Summarize persuasion outcomes by tactic.
 
     Args:
