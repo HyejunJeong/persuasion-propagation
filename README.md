@@ -14,46 +14,90 @@ This repository contains the implementation of experiments investigating **persu
 ## Repository Structure
 
 ```
-src/
-├── README.md                                    # This file
+persuasion_propagation/
+├── README.md                     # This file
 │
-├── utils.py                                     # Shared utilities (LLM client, etc.)
+├── utils.py                      # Shared utilities (LLM client, constants, helpers)
+├── vis.py                        # Visualization & analysis functions
 │
-├── persuasion-misaligned-coding-unified.ipynb  # Coding tasks (misaligned)
-├── persuasion-misaligned-web-unified.ipynb     # Web research (misaligned)
-├── persuasion-aligned-web-unified.ipynb        # Web research (aligned)
+├── notebook/                     # Jupyter notebooks
+│   ├── opinion_change.ipynb                        # Opinion persistence experiments
+│   ├── persuasion-misaligned-coding-unified.ipynb  # Coding tasks (misaligned)
+│   ├── persuasion-misaligned-web-unified.ipynb     # Web research (misaligned)
+│   ├── persuasion-aligned-web-unified.ipynb        # Web research (aligned)
+│   └── visualization-unified.ipynb                 # Comprehensive visualization
 │
-└── visualization-unified.ipynb                  # Comprehensive visualization & analysis
+├── results/                      # Experimental results (see Data section)
+└── traces/                       # Execution traces (see Data section)
 ```
 
-## Unified Notebooks
+## Core Modules
 
-All experiments have been consolidated into **three main notebooks**, each supporting two experiment modes:
+### `utils.py` - Shared Utilities
 
-### 1. Misaligned Coding (`persuasion-misaligned-coding-unified.ipynb`)
+Contains reusable functions and constants:
 
-**Task**: Python coding problems (KodCode dataset)
-**Persuasion**: Unrelated opinions (e.g., social media liability, tenure reform)
-**Hypothesis**: Opinion persuasion → behavioral changes in coding (errors, revisions, duration)
+**Constants**:
+- `PERSONAS`: 7 personality definitions (gpt, claude, llama, mistral, qwen, gemma, neutral)
+- `TACTICS`: 5 persuasion tactics (logical_appeal, authority_endorsement, evidence_based, priming_urgency, anchoring)
+- `RECALL_PROBE`: Memory probe text
+- `CHOICE_RE`: Regex pattern for choice extraction
 
-**Modes**:
-- `opinion_persuasion`: 7-step pipeline with opinion tracking
-- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+**Functions**:
+- `LLMClient`: Universal LLM client supporting OpenAI, Anthropic, Google, Together, and HuggingFace
+- `parse_choice()`: Extract A/B choices from text
+- `generate_topic_persuasion_line_with_writer()`: Generate persuasive text using specified tactics
+- `normalize_persuasion_df()`: Normalize different data schemas
+- `aggregate_backbone()`: Aggregate persuasion data by tactic
 
-### 2. Misaligned Web (`persuasion-misaligned-web-unified.ipynb`)
+### `vis.py` - Visualization & Analysis
 
-**Task**: Web research (TREC Session Track tasks)
-**Persuasion**: Unrelated opinions (same as coding)
-**Hypothesis**: Opinion persuasion → behavioral changes in web surfing (URLs, domains, search patterns)
+Contains plotting and statistical analysis functions:
 
-**Modes**:
-- `opinion_persuasion`: 7-step pipeline with opinion tracking
-  - **Conditions**: `baseline`, `neutral_injection`, persuasion tactics
-- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+**Data Loading**:
+- `load_jsonl()`: Load JSONL files with backbone labels
+- `load_multiple_files()`: Concatenate multiple experiment files
+- `filter_baseline()`: Remove baseline conditions
 
-### 3. Aligned Web (`persuasion-aligned-web-unified.ipynb`)
+**Metrics**:
+- `compute_friction_score()`: Calculate friction score as mean percentile rank
+- `compute_normalized_metrics()`: Baseline-normalized metrics
+- `percentile_rank_nan_safe()`: NaN-safe percentile ranking
 
-**Task**: Web research (TREC Session Track tasks)
+**Statistical Tests**:
+- `pooled_np_p_test()`: Mann-Whitney U test (not-persuaded vs persuaded)
+- `persona_delta_summary()`: Per-persona statistical summary
+- `tactic_summary()`: Per-tactic persuasion rates and effects
+
+**Plotting**:
+- `plot_coding_delta_boxplot()`: Box plots for coding metrics
+- `plot_pct_box_grid()`: Grid of box plots by persona × tactic
+- `plot_coding_delta_side_by_side()`: Side-by-side heatmaps (NP vs P)
+- `plot_pc_difference()`: Persuasion-induced shift heatmaps
+
+## Notebooks
+
+### 1. Opinion Change (`opinion_change.ipynb`)
+
+**Focus**: Single-agent opinion flip experiments with persistence tracking
+
+**Pipeline**:
+1. Prior opinion evaluation (A or B)
+2. Generate persuasion targeting opposite stance
+3. Persuasion + commitment loop (3 turns)
+4. Post opinion evaluation → `persuaded = (post ≠ prior)`
+5. Distractor questions (configurable: 1-8)
+6. Final opinion evaluation → `persisted = (final == post)`
+7. Recall probe
+
+**Key Metrics**:
+- `persuaded`: Opinion changed after persuasion
+- `persisted`: Persuaded opinion maintained after distractors
+- `prior_choice`, `post_choice`, `final_choice`: Opinion trajectory
+
+### 2. Persuasion-Aligned Web (`persuasion-aligned-web-unified.ipynb`)
+
+**Task**: Web research (TREC Session Track)
 **Persuasion**: Task-aligned execution strategies (breadth vs depth)
 **Hypothesis**: Execution preference persuasion → direct behavioral changes
 
@@ -65,7 +109,48 @@ All experiments have been consolidated into **three main notebooks**, each suppo
 - `opinion_persuasion`: 7-step pipeline with preference tracking
 - `prefill_only`: Direct prefill with execution preference (P/NP/C0)
 
-### 4. Visualization (`visualization-unified.ipynb`)
+### 3. Persuasion-Misaligned Coding (`persuasion-misaligned-coding-unified.ipynb`)
+
+**Task**: Python coding problems (KodCode dataset)
+**Persuasion**: Unrelated opinions (e.g., social media liability, tenure reform)
+**Hypothesis**: Opinion persuasion → behavioral changes in coding
+
+**Behavioral Metrics**:
+- `num_errors`: Code execution errors
+- `num_code_revisions`: Number of revisions made
+- `coding_duration_s`: Time spent coding
+- `revision_entropy`: Diversity of revision types
+- `strategy_switch_rate`: Strategy changes during solving
+- `overcommitment`: Persisting with failing approaches
+- `mean_revision_size`: Average revision magnitude
+- `final_revision_delta`: Size of final fix
+
+**Modes**:
+- `opinion_persuasion`: 7-step pipeline with opinion tracking
+- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+
+### 4. Persuasion-Misaligned Web (`persuasion-misaligned-web-unified.ipynb`)
+
+**Task**: Web research (TREC Session Track)
+**Persuasion**: Unrelated opinions (same as coding)
+**Hypothesis**: Opinion persuasion → behavioral changes in web surfing
+
+**Behavioral Metrics**:
+- `num_urls`: Total URLs visited
+- `num_unique_urls`: Unique URLs visited
+- `num_domains`: Number of distinct domains
+- `domain_entropy`: Shannon entropy of domain distribution
+- `num_searches`: Number of search queries
+- `num_summaries`: Number of summaries generated
+- `avg_latency_s`: Average action latency
+- `total_duration_s`: Total task duration
+
+**Modes**:
+- `opinion_persuasion`: 7-step pipeline with opinion tracking
+  - **Conditions**: `baseline`, `neutral_injection`, persuasion tactics
+- `prefill_only`: Direct prefill with belief state (P/NP/C0)
+
+### 5. Visualization (`visualization-unified.ipynb`)
 
 Comprehensive analysis and visualization toolkit:
 - Friction score calculation (percentile-based aggregation)
@@ -125,6 +210,7 @@ scipy
 openai
 anthropic
 google-generativeai
+together
 
 # AutoGen
 autogen-agentchat>=0.4.0
@@ -136,6 +222,7 @@ seaborn
 
 # Data
 datasets
+huggingface_hub
 ```
 
 ### API Keys
@@ -146,11 +233,13 @@ Set environment variables:
 export OPENAI_API_KEY="your-key"
 export ANTHROPIC_API_KEY="your-key"
 export GEMINI_API_KEY="your-key"
+export TOGETHER_API_KEY="your-key"
 ```
 
 Or configure in notebook cells:
 
 ```python
+import os
 os.environ["OPENAI_API_KEY"] = "your-key"
 ```
 
@@ -158,7 +247,8 @@ os.environ["OPENAI_API_KEY"] = "your-key"
 
 ### Quick Start
 
-1. **Choose an experiment notebook**:
+1. **Choose an experiment notebook** from `notebook/`:
+   - Opinion persistence: `opinion_change.ipynb`
    - Coding tasks: `persuasion-misaligned-coding-unified.ipynb`
    - Web (misaligned): `persuasion-misaligned-web-unified.ipynb`
    - Web (aligned): `persuasion-aligned-web-unified.ipynb`
@@ -188,49 +278,55 @@ os.environ["OPENAI_API_KEY"] = "your-key"
    ```
 
 5. **Analyze results**:
-   - Open `visualization-unified.ipynb`
+   - Open `notebook/visualization-unified.ipynb`
    - Load your data files
    - Run statistical tests and generate plots
 
-### Example: Running a Coding Experiment
+### Example: Running an Opinion Change Experiment
 
 ```python
-# In persuasion-misaligned-coding-unified.ipynb
+# In notebook/opinion_change.ipynb
 
-# 1. Set mode
-EXPERIMENT_MODE = "opinion_persuasion"
+from utils import LLMClient
 
-# 2. Configure
-personas = ["gpt", "claude"]
-tactics = ["evidence_based", "logical_appeal", "baseline"]
-N_RUNS = 5
-N_CODE_PER_RUN = 10
+# Configure
+personas = ["gpt", "claude", "mistral"]
+tactics = ["logical_appeal", "authority_endorsement", "evidence_based",
+           "priming_urgency", "anchoring", "none"]
+n_distractors = 8  # Number of distractor questions
 
-# 3. Run
-for run_i in range(N_RUNS):
-    df = await run_batch_coding(
-        run_id=f"run{run_i:02d}",
-        personas=personas,
-        tactics=tactics,
-        model_client=model_client,
-        writer_client=writer_client,
-        ds=ds,
-        n_code=N_CODE_PER_RUN,
-        seed=42 + run_i,
-        pairs=CLAIM_PAIRS,
-        experiment_mode=EXPERIMENT_MODE,
-    )
+# Initialize writer client for persuasion generation
+WRITER_MODEL_ID = "openai:gpt-4.1-nano"
+writer_client = LLMClient(WRITER_MODEL_ID)
 
-    df.to_json(f"results_run{run_i}.jsonl", orient="records", lines=True)
+# Run experiment
+df = await run_batch(
+    personas=personas,
+    tactics=tactics,
+    mode="no_reset",
+    n_per_cell=1,  # Trials per (persona, tactic, claim_pair)
+    n_distractors=n_distractors,
+    out_csv=Path(f"results/opinion_d{n_distractors}_persist.csv"),
+    seed=42,
+    writer_client=writer_client,
+    pairs=range(1, 29),  # All 28 claim pairs
+)
 ```
 
 ### Example: Analyzing Results
 
 ```python
-# In visualization-unified.ipynb
+# In notebook/visualization-unified.ipynb
+
+import pandas as pd
+from vis import (
+    compute_friction_score, filter_baseline,
+    pooled_np_p_test, plot_friction_by_persuasion,
+    CODING_RAW_METRICS, WEB_RAW_METRICS
+)
 
 # Load data
-df = pd.read_json("results_run00.jsonl", lines=True)
+df = pd.read_json("results/coding_results.jsonl", lines=True)
 
 # Compute friction score
 df = compute_friction_score(df, CODING_RAW_METRICS)
@@ -242,12 +338,21 @@ df_nobase = filter_baseline(df)
 print(pooled_np_p_test(df_nobase))
 
 # Visualizations
-plot_friction_by_persuasion(df_nobase)
-plot_friction_by_tactic(df_nobase)
-plot_behavioral_heatmap(df_nobase, CODING_RAW_METRICS)
+plot_friction_by_persuasion(df_nobase, title="Coding: Friction by Persuasion Status")
 ```
 
-## Data Formats
+## Data & Results
+
+### Experimental Data (Large Files)
+
+Due to file size limitations, trace files and result files are hosted externally:
+
+**📦 Google Drive**: [Persuasion Propagation Data](https://drive.google.com/drive/folders/1mrFY_EGa0KYDvEn2xfEUgkBC5jnVdBAS?usp=sharing)
+
+This includes:
+- `results/`: Experimental results (JSONL format)
+- `traces/`: Full execution traces and logs
+- Pre-computed analysis outputs
 
 ### Output Schema (JSONL)
 
@@ -307,7 +412,7 @@ Defined personality prompts for different LLM styles:
 - `llama`: Straightforward, efficient, task-focused
 - `mistral`: Lively, curious, results-oriented
 - `qwen`: Polite, structured, logical
-- `gemini`: Empathetic, supportive, pragmatic
+- `gemma`: Empathetic, supportive, pragmatic
 - `neutral`: Neutral, concise, practical
 
 ## Key Features
@@ -319,6 +424,7 @@ Defined personality prompts for different LLM styles:
 ✅ **Statistical Rigor**: Mann-Whitney U tests, effect sizes, persona analysis
 ✅ **Publication-Ready Viz**: Clean plots and heatmaps
 ✅ **Reproducible**: Seeds, logging, trace files
+✅ **Modular Design**: Reusable utilities in `utils.py` and `vis.py`
 
 ## Citation
 
@@ -341,7 +447,6 @@ If you use this code in your research, please cite:
 
 For questions or issues, please contact:
 - Hyejun Jeong: hjeong@umass.edu
-- [Add collaborators]
 
 ## Acknowledgments
 
@@ -352,4 +457,4 @@ For questions or issues, please contact:
 
 ---
 
-**Note**: This README describes the unified, refactored codebase. Legacy notebooks (visualization-v2.ipynb, comprehensive_vis.ipynb, etc.) have been consolidated and can be archived.
+**Last Updated**: January 2026

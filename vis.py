@@ -1,12 +1,63 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import matplotlib.gridspec as gridspec
 import matplotlib.colors as mcolors
 from scipy.stats import mannwhitneyu
+from pathlib import Path
+from typing import List, Dict, Optional
 
 
 sns.set_style("white")
+
+# ======================================
+# CONSTANTS & CONFIGURATION
+# ======================================
+BASELINE = "baseline"
+EPS = 1e-6
+
+TACTIC_COLORS = {
+    "baseline": "#666666",
+    "logical_appeal": "#1f77b4",
+    "authority_endorsement": "#ff7f0e",
+    "evidence_based": "#2ca02c",
+    "priming_urgency": "#d62728",
+    "anchoring": "#9467bd",
+    "neutral_injection": "#8c564b",
+}
+
+PERSONA_COLORS = {
+    "gpt": "#1f77b4",
+    "claude": "#ff7f0e",
+    "llama": "#2ca02c",
+    "mistral": "#d62728",
+    "qwen": "#9467bd",
+    "gemini": "#8c564b",
+    "neutral": "#666666",
+}
+
+CODING_RAW_METRICS = [
+    "num_errors",
+    "num_code_revisions",
+    "coding_duration_s",
+    "revision_entropy",
+    "strategy_switch_rate",
+    "overcommitment",
+    "mean_revision_size",
+    "final_revision_delta",
+]
+
+WEB_RAW_METRICS = [
+    "num_urls",
+    "num_unique_urls",
+    "num_domains",
+    "domain_entropy",
+    "num_searches",
+    "num_summaries",
+    "avg_latency_s",
+    "total_duration_s",
+]
 
 palette = {
     0: "steelblue",   # Not persuaded
@@ -15,7 +66,343 @@ palette = {
 
 
 # ======================================
-# PLOTTING FUNCTION
+# DATA LOADING UTILITIES
+# ======================================
+def load_jsonl(path: str, backbone: str = "gpt") -> pd.DataFrame:
+    """Load JSONL file into dataframe with backbone label."""
+    df = pd.read_json(path, lines=True)
+    df["backbone"] = backbone
+    return df
+
+
+def load_multiple_files(file_dict: Dict[str, str]) -> pd.DataFrame:
+    """Load and concatenate multiple JSONL files.
+
+    Args:
+        file_dict: Dict mapping persona/backbone name to file path
+
+    Returns:
+        Combined dataframe
+    """
+    dfs = []
+    for name, path in file_dict.items():
+        if Path(path).exists():
+            df = load_jsonl(path, backbone=name)
+            dfs.append(df)
+            print(f"  ✓ Loaded {name}: {len(df)} rows")
+        else:
+            print(f"  ✗ File not found: {path}")
+
+    if not dfs:
+        raise ValueError("No files were successfully loaded")
+
+    df_combined = pd.concat(dfs, ignore_index=True)
+    print(f"\n✅ Combined: {len(df_combined)} total rows")
+    return df_combined
+
+
+def filter_baseline(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove baseline rows from dataframe."""
+    return df[df["tactic"] != BASELINE].copy()
+
+
+def validate_required_columns(df: pd.DataFrame, required: List[str]):
+    """Check if dataframe has required columns."""
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    print(f"✅ All required columns present: {required}")
+
+
+# ======================================
+# METRIC CALCULATION
+# ======================================
+def percentile_rank_nan_safe(x):
+    """Calculate percentile ranks with NaN handling."""
+    x = pd.Series(x)
+    out = pd.Series(np.nan, index=x.index, dtype=float)
+    mask = x.notna()
+    out.loc[mask] = x.loc[mask].rank(pct=True)
+    return out.values
+
+
+def compute_friction_score(
+    df: pd.DataFrame,
+    raw_metrics: List[str],
+    baseline_label: str = "baseline",
+    eps: float = EPS,
+) -> pd.DataFrame:
+    """Compute friction score as mean percentile rank across metrics.
+
+    Steps:
+    1. For each metric, compute percentile rank within each persona
+    2. Average percentile ranks across all metrics
+    3. Result is friction_score in [0, 1]
+
+    Args:
+        df: Input dataframe
+        raw_metrics: List of raw metric column names
+        baseline_label: Name of baseline condition
+        eps: Small epsilon for numerical stability
+
+    Returns:
+        Dataframe with added friction_score column
+    """
+    df = df.copy()
+
+    for metric in raw_metrics:
+        if metric not in df.columns:
+            print(f"⚠️  Warning: {metric} not found in dataframe")
+            continue
+
+        rank_col = f"{metric}_rank"
+        df[rank_col] = df.groupby("persona")[metric].transform(percentile_rank_nan_safe)
+
+    rank_cols = [f"{m}_rank" for m in raw_metrics if f"{m}_rank" in df.columns]
+    df["friction_score"] = df[rank_cols].mean(axis=1, skipna=True)
+
+    print(f"✅ Friction score computed (n={len(df)})")
+    print(f"   Mean: {df['friction_score'].mean():.3f}")
+    print(f"   Std: {df['friction_score'].std():.3f}")
+
+    return df
+
+
+def compute_normalized_metrics(
+    df: pd.DataFrame,
+    raw_metrics: List[str],
+    baseline_label: str = "baseline",
+) -> pd.DataFrame:
+    """Compute baseline-normalized metrics: (x - baseline_mean) / baseline_std.
+
+    Args:
+        df: Input dataframe
+        raw_metrics: List of raw metric column names
+        baseline_label: Name of baseline condition
+
+    Returns:
+        Dataframe with added {metric}_norm columns
+    """
+    df = df.copy()
+    baseline_df = df[df["tactic"] == baseline_label]
+
+    for metric in raw_metrics:
+        if metric not in df.columns:
+            continue
+
+        baseline_stats = baseline_df.groupby("persona")[metric].agg(["mean", "std"])
+        norm_col = f"{metric}_norm"
+
+        def normalize_row(row):
+            persona = row["persona"]
+            if persona not in baseline_stats.index:
+                return np.nan
+            mean_val = baseline_stats.loc[persona, "mean"]
+            std_val = baseline_stats.loc[persona, "std"]
+            if std_val == 0 or pd.isna(std_val):
+                return np.nan
+            return (row[metric] - mean_val) / std_val
+
+        df[norm_col] = df.apply(normalize_row, axis=1)
+
+    print(f"✅ Normalized metrics computed")
+    return df
+
+
+# ======================================
+# STATISTICAL TESTS
+# ======================================
+def pooled_np_p_test(df: pd.DataFrame, score_col: str = "friction_score") -> Dict:
+    """Compare not-persuaded vs persuaded groups using Mann-Whitney U test.
+
+    Args:
+        df: Dataframe with 'persuaded' column and score column
+        score_col: Name of score column to compare
+
+    Returns:
+        Dict with test results
+    """
+    np_vals = df[df["persuaded"] == 0][score_col].dropna()
+    p_vals = df[df["persuaded"] == 1][score_col].dropna()
+
+    if len(np_vals) == 0 or len(p_vals) == 0:
+        return {
+            "n_np": len(np_vals),
+            "n_p": len(p_vals),
+            "mean_np": np.nan,
+            "mean_p": np.nan,
+            "delta": np.nan,
+            "u_stat": np.nan,
+            "p_value": np.nan,
+        }
+
+    u_stat, p_value = mannwhitneyu(np_vals, p_vals, alternative="two-sided")
+
+    return {
+        "n_np": len(np_vals),
+        "n_p": len(p_vals),
+        "mean_np": np_vals.mean(),
+        "mean_p": p_vals.mean(),
+        "delta": p_vals.mean() - np_vals.mean(),
+        "u_stat": u_stat,
+        "p_value": p_value,
+    }
+
+
+def persona_delta_summary(df: pd.DataFrame, score_col: str = "friction_score") -> pd.DataFrame:
+    """Compute per-persona differences between persuaded and not-persuaded.
+
+    Args:
+        df: Dataframe with 'persona', 'persuaded' columns
+        score_col: Score column to analyze
+
+    Returns:
+        Summary dataframe with per-persona statistics
+    """
+    rows = []
+
+    for persona, g in df.groupby("persona"):
+        np_vals = g[g["persuaded"] == 0][score_col].dropna()
+        p_vals = g[g["persuaded"] == 1][score_col].dropna()
+
+        if len(np_vals) == 0 or len(p_vals) == 0:
+            continue
+
+        u_stat, p_value = mannwhitneyu(np_vals, p_vals, alternative="two-sided")
+
+        rows.append({
+            "persona": persona,
+            "n_np": len(np_vals),
+            "n_p": len(p_vals),
+            "mean_np": np_vals.mean(),
+            "mean_p": p_vals.mean(),
+            "delta": p_vals.mean() - np_vals.mean(),
+            "u_stat": u_stat,
+            "p_value": p_value,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def tactic_summary(df: pd.DataFrame, score_col: str = "friction_score") -> pd.DataFrame:
+    """Summarize persuasion outcomes by tactic.
+
+    Args:
+        df: Dataframe with 'tactic', 'persuaded' columns
+        score_col: Score column to analyze
+
+    Returns:
+        Summary dataframe with per-tactic statistics
+    """
+    rows = []
+
+    for tactic, g in df.groupby("tactic"):
+        if tactic == BASELINE:
+            continue
+
+        n_total = len(g)
+        n_persuaded = g["persuaded"].sum()
+        persuasion_rate = n_persuaded / n_total if n_total > 0 else 0
+
+        np_vals = g[g["persuaded"] == 0][score_col].dropna()
+        p_vals = g[g["persuaded"] == 1][score_col].dropna()
+
+        rows.append({
+            "tactic": tactic,
+            "n_total": n_total,
+            "n_persuaded": n_persuaded,
+            "persuasion_rate": persuasion_rate,
+            "mean_np": np_vals.mean() if len(np_vals) > 0 else np.nan,
+            "mean_p": p_vals.mean() if len(p_vals) > 0 else np.nan,
+            "delta": (p_vals.mean() - np_vals.mean()) if len(p_vals) > 0 and len(np_vals) > 0 else np.nan,
+        })
+
+    return pd.DataFrame(rows)
+
+
+# ======================================
+# DATA NORMALIZATION
+# ======================================
+def normalize_persuasion_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize GPT / LLaMA / Mistral persuasion logs into a common schema.
+
+    Output columns guaranteed:
+      - prior_choice
+      - post_choice          (immediate after persuasion)
+      - final_choice         (after distractors)
+      - persuaded            (immediate persuasion success)
+      - persisted
+    """
+    if "persona" in df.columns:
+        df = df[df["persona"] != "gemma"]
+
+    df = df.copy()
+    cols = set(df.columns)
+
+    # GPT-style schema
+    if "target_after_persuasion" in cols:
+        df["post_choice"] = df["target_after_persuasion"]
+        df["final_choice"] = df["choice"]
+        df["persuaded"] = df["success_behavior"].astype(int)
+
+    # LLaMA / Mistral schema
+    elif "post_choice" in cols and "final_choice" in cols:
+        df["persuaded"] = df["persuaded"].astype(int)
+
+    else:
+        raise ValueError(f"Unknown schema: {df.columns.tolist()}")
+
+    required = ["prior_choice", "post_choice", "final_choice", "persuaded", "persisted"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns after normalization: {missing}")
+
+    return df
+
+
+def _get_post_and_final_cols(df: pd.DataFrame):
+    """Detect column names for post and final choices."""
+    cols = set(df.columns)
+    if "target_after_persuasion" in cols and "choice" in cols:
+        return "target_after_persuasion", "choice"
+    if "post_choice" in cols and "final_choice" in cols:
+        return "post_choice", "final_choice"
+    raise ValueError(f"Unknown schema: {df.columns.tolist()}")
+
+
+def aggregate_backbone(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate persuasion data by tactic with persistence status."""
+    df = df[~df["prior_choice"].astype(str).str.contains("ERROR", na=False)].copy()
+
+    post_col, final_col = _get_post_and_final_cols(df)
+
+    df["persuaded_flag"] = (df["prior_choice"] != df[post_col])
+
+    df["status"] = df.apply(
+        lambda r: "PERSISTED" if r["persisted"] == 1
+        else ("FADED" if r["persuaded_flag"] else "NO_CHANGE"),
+        axis=1
+    )
+
+    agg = (
+        df.groupby("tactic")["status"]
+        .value_counts()
+        .unstack(fill_value=0)
+    )
+    agg["total"] = agg.sum(axis=1)
+
+    out = pd.DataFrame(index=agg.index)
+    out["P"]  = (agg.get("PERSISTED", 0) / agg["total"] * 100).round(2)
+    out["F"]  = (agg.get("FADED", 0) / agg["total"] * 100).round(2)
+    out["NP"] = (agg.get("NO_CHANGE", 0) / agg["total"] * 100).round(2)
+
+    order = ["none", "anchoring", "authority_endorsement", "evidence_based", "logical_appeal", "priming_urgency"]
+    return out.reindex(order)
+
+
+# ======================================
+# PLOTTING FUNCTIONS
 # ======================================
 def plot_coding_delta_boxplot(df, delta_col):
     means = (
