@@ -425,7 +425,7 @@ Defined personality prompts for different LLM styles:
 ✅ **Reproducible**: Seeds, logging, trace files  
 ✅ **Modular Design**: Reusable utilities in `utils.py` and `vis.py`  
 
-## Citation
+<!-- ## Citation
 
 If you use this code in your research, please cite:
 
@@ -436,16 +436,7 @@ If you use this code in your research, please cite:
   journal={TBD},
   year={2026}
 }
-```
-
-## License
-
-[Specify your license here]
-
-## Contact
-
-For questions or issues, please contact:
-- Hyejun Jeong: hjeong@umass.edu
+``` -->
 
 ## Acknowledgments
 
