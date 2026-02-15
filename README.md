@@ -1,8 +1,9 @@
-# Persuasion Persistence & Behavioral Misalignment Study
+# Persuasion Propagation
 
 ## Overview
 
-This repository contains the implementation of experiments investigating **persuasion persistence** and **behavioral misalignment** in large language models (LLMs). The study examines whether persuading an agent on one topic (or execution strategy) influences its behavior on subsequent, unrelated tasks.
+This repository contains the implementation of experiments investigating **persuasion propagation** in LLMs. 
+The study examines whether persuading an agent on one topic (or execution strategy) influences its behavior on subsequent, unrelated tasks.
 
 ### Research Questions
 
